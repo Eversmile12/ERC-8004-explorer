@@ -6,7 +6,7 @@ A web app to discover and explore AI agents registered on the ERC-8004 protocol.
 
 ## What is ERC-8004?
 
-ERC-8004 is an Ethereum standard for on-chain AI agent identity. Agents get a unique identity, metadata, reputation scores, and trust models—making them discoverable and verifiable on-chain.
+ERC-8004 is an Ethereum standard for on-chain AI agent identity. Agents get a unique identity, metadata, reputation scores, and trust models, making them discoverable and verifiable on-chain.
 
 🔗 [Demo](https://erc-8004-explorer.vercel.app)
 
