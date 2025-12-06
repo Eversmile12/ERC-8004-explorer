@@ -10,12 +10,12 @@ ERC-8004 is an Ethereum standard for on-chain AI agent identity. Agents get a un
 
 ## Features
 
-- 🔍 **Search** — Find agents by name
-- 🏷️ **Filters** — Filter by reviews, API endpoints
-- 📄 **Pagination** — Configurable page sizes
-- ⭐ **Reviews** — View agent ratings and feedback
-- 🔗 **Endpoints** — See MCP and A2A API endpoints
-- 🌙 **Dark UI** — Clean, minimal dark theme
+- 🔍 **Search** - Find agents by name
+- 🏷️ **Filters** - Filter by reviews, API endpoints
+- 📄 **Pagination** - Configurable page sizes
+- ⭐ **Reviews** - View agent ratings and feedback
+- 🔗 **Endpoints** - See MCP and A2A API endpoints
+- 🌙 **Dark UI** - Clean, minimal dark theme
 
 ## Quick Start
 
@@ -35,11 +35,11 @@ Open [http://localhost:3000](http://localhost:3000)
 
 ## Tech Stack
 
-- **Next.js 15** — React framework with App Router
-- **TypeScript** — Type safety
-- **Tailwind CSS** — Styling
-- **The Graph** — Blockchain data indexing
-- **Lucide** — Icons
+- **Next.js 15** - React framework with App Router
+- **TypeScript** - Type safety
+- **Tailwind CSS** - Styling
+- **The Graph** - Blockchain data indexing
+- **Lucide** - Icons
 
 ## Project Structure
 
