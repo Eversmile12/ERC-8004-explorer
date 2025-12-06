@@ -28,6 +28,17 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         {children}
+        <footer className="border-t border-white/5 bg-[#0a0a0b] py-6 text-center text-sm text-white/40">
+          Built with 💻 by{" "}
+          <a
+            href="https://x.com/VittoStack"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-white/60 hover:text-white transition-colors"
+          >
+            Vitto
+          </a>
+        </footer>
       </body>
     </html>
   );
