@@ -207,6 +207,58 @@ export async function fetchAgentWithFeedback(agentId: string): Promise<{ agent: 
 }
 
 /**
+ * Counts agents matching the given filters
+ *
+ * Since The Graph doesn't provide a direct count query, we fetch only agent IDs
+ * with a high limit and count the results. This is efficient because we only
+ * request the id field.
+ *
+ * @param filters - Optional filters (search, hasReviews, hasEndpoint)
+ * @returns Number of agents matching the filters
+ */
+export async function fetchAgentCount(filters?: AgentFilters): Promise<number> {
+    // Build where clause using the same logic as fetchAgents
+    const conditions: string[] = [];
+
+    if (filters?.search) {
+        conditions.push(`{ registrationFile_: { name_contains_nocase: "${filters.search}" } }`);
+    }
+
+    if (filters?.hasReviews) {
+        conditions.push(`{ totalFeedback_gt: 0 }`);
+    }
+
+    if (filters?.hasEndpoint) {
+        conditions.push(`{ or: [
+            { registrationFile_: { mcpEndpoint_not: null } },
+            { registrationFile_: { a2aEndpoint_not: null } }
+        ] }`);
+    }
+
+    let whereClause = "";
+    if (conditions.length === 1) {
+        whereClause = `where: ${conditions[0]}`;
+    } else if (conditions.length > 1) {
+        whereClause = `where: { and: [${conditions.join(", ")}] }`;
+    }
+
+    // Fetch only IDs with a high limit (lightweight query)
+    const query = `
+    {
+      agents(
+        first: 1000
+        ${whereClause}
+      ) {
+        id
+      }
+    }
+  `;
+
+    const data = (await querySubgraph(query)) as { agents: { id: string }[] };
+    return data.agents.length;
+}
+
+/**
  * Fetches global statistics from the subgraph
  *
  * @returns Object with totalAgents and totalFeedback counts

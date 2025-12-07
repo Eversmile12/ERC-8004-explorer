@@ -348,6 +348,59 @@ export async function fetchAgentWithFeedback(agentId: string): Promise<{ agent: 
 }
 ```
 
+Add a function to count agents matching filters. Since The Graph doesn't provide a direct count query, we fetch only agent IDs and count the results:
+
+```typescript
+/**
+ * Counts agents matching the given filters
+ *
+ * Since The Graph doesn't provide a direct count query, we fetch only agent IDs
+ * with a high limit and count the results. This is efficient because we only
+ * request the id field.
+ */
+export async function fetchAgentCount(filters?: AgentFilters): Promise<number> {
+    // Build where clause using the same logic as fetchAgents
+    const conditions: string[] = [];
+
+    if (filters?.search) {
+        conditions.push(`{ registrationFile_: { name_contains_nocase: "${filters.search}" } }`);
+    }
+
+    if (filters?.hasReviews) {
+        conditions.push(`{ totalFeedback_gt: 0 }`);
+    }
+
+    if (filters?.hasEndpoint) {
+        conditions.push(`{ or: [
+            { registrationFile_: { mcpEndpoint_not: null } },
+            { registrationFile_: { a2aEndpoint_not: null } }
+        ] }`);
+    }
+
+    let whereClause = "";
+    if (conditions.length === 1) {
+        whereClause = `where: ${conditions[0]}`;
+    } else if (conditions.length > 1) {
+        whereClause = `where: { and: [${conditions.join(", ")}] }`;
+    }
+
+    // Fetch only IDs with a high limit (lightweight query)
+    const query = `
+    {
+      agents(
+        first: 1000
+        ${whereClause}
+      ) {
+        id
+      }
+    }
+  `;
+
+    const data = (await querySubgraph(query)) as { agents: { id: string }[] };
+    return data.agents.length;
+}
+```
+
 Finally, add a function to fetch global statistics:
 
 ```typescript
@@ -375,9 +428,10 @@ export async function fetchGlobalStats(): Promise<{
 }
 ```
 
-Your complete `subgraph.ts` file is now ready. This gives us three main functions:
+Your complete `subgraph.ts` file is now ready. This gives us four main functions:
 
 -   `fetchAgents()` — paginated list with filters
+-   `fetchAgentCount()` — count agents matching filters (for pagination)
 -   `fetchAgentWithFeedback()` — single agent with reviews
 -   `fetchGlobalStats()` — total counts
 
@@ -461,7 +515,7 @@ Replace the contents of `src/app/page.tsx` with our agent listing page. Let's br
  * Supports search, filtering, and configurable pagination.
  */
 
-import { fetchAgents, fetchGlobalStats, AgentFilters } from "@/lib/subgraph";
+import { fetchAgents, fetchAgentCount, fetchGlobalStats, AgentFilters } from "@/lib/subgraph";
 import { PageSizeSelect } from "@/components/PageSizeSelect";
 import { Search, Filter } from "lucide-react";
 import Link from "next/link";
@@ -657,14 +711,20 @@ export default async function Home({ searchParams }: PageProps) {
         hasEndpoint: hasEndpoint ? "true" : undefined,
     };
 
-    // Fetch agents and stats from subgraph (runs on server)
-    const [agents, stats] = await Promise.all([fetchAgents(pageSize, skip, filters), fetchGlobalStats()]);
-
-    const totalAgents = parseInt(stats.totalAgents);
-    const totalPages = Math.ceil(totalAgents / pageSize);
-
     // Check if any filters are active
     const hasActiveFilters = hasReviews || hasEndpoint || search;
+
+    // Fetch agents and stats from subgraph (runs on server)
+    // When filters are active, we need to count filtered results for accurate pagination
+    const [agents, stats, filteredCount] = await Promise.all([
+        fetchAgents(pageSize, skip, filters),
+        fetchGlobalStats(),
+        hasActiveFilters ? fetchAgentCount(filters) : Promise.resolve(null),
+    ]);
+
+    // Use filtered count for pagination when filters are active, otherwise use global total
+    const totalAgents = filteredCount ?? parseInt(stats.totalAgents);
+    const totalPages = Math.ceil(totalAgents / pageSize);
 
     return (
         <div className="min-h-screen bg-[#0a0a0b]">
@@ -676,7 +736,9 @@ export default async function Home({ searchParams }: PageProps) {
                         <div>
                             <h1 className="text-2xl font-semibold tracking-tight text-white">8004 Agents Explorer</h1>
                             <p className="mt-1 text-sm text-white/50">
-                                {totalAgents.toLocaleString()} registered agents on Ethereum Sepolia
+                                {hasActiveFilters
+                                    ? `${totalAgents.toLocaleString()} matching agents`
+                                    : `${totalAgents.toLocaleString()} registered agents on Ethereum Sepolia`}
                             </p>
                         </div>
 
