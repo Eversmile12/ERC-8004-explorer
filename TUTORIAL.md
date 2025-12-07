@@ -171,7 +171,7 @@ export interface Feedback {
 
 The `Agent` interface represents an ERC-8004 agent with its on-chain identity and metadata. The `registrationFile` contains the off-chain metadata like name, description, and API endpoints.
 
-Next, add the filter types and a helper function to execute GraphQL queries:
+Next, add the filter types and helper functions. Note that the subgraph only decodes IPFS metadata automatically. For HTTP URLs and base64 data URIs, we need a fallback to fetch and decode the metadata ourselves:
 
 ```typescript
 /**
@@ -181,6 +181,52 @@ export interface AgentFilters {
     search?: string; // Search by agent name
     hasReviews?: boolean; // Only agents with reviews
     hasEndpoint?: boolean; // Only agents with MCP or A2A endpoint
+}
+
+/**
+ * Resolves and fetches metadata from a URI
+ *
+ * The subgraph only decodes IPFS metadata. For HTTP URLs and base64 data URIs,
+ * we need to fetch and decode the metadata ourselves.
+ */
+async function resolveMetadata(uri: string): Promise<Agent["registrationFile"]> {
+    try {
+        let jsonData: string;
+
+        if (uri.startsWith("data:")) {
+            // Base64 data URI: data:application/json;base64,eyJuYW1lIjoi...
+            const base64Match = uri.match(/^data:[^;]+;base64,(.+)$/);
+            if (!base64Match) return null;
+            jsonData = atob(base64Match[1]);
+        } else if (uri.startsWith("http://") || uri.startsWith("https://")) {
+            // HTTP URL: fetch directly
+            const response = await fetch(uri);
+            if (!response.ok) return null;
+            jsonData = await response.text();
+        } else if (uri.startsWith("ipfs://")) {
+            // IPFS: use a public gateway
+            const hash = uri.replace("ipfs://", "");
+            const response = await fetch(`https://ipfs.io/ipfs/${hash}`);
+            if (!response.ok) return null;
+            jsonData = await response.text();
+        } else {
+            return null;
+        }
+
+        const metadata = JSON.parse(jsonData);
+
+        // Map to our registrationFile structure
+        return {
+            name: metadata.name || null,
+            description: metadata.description || null,
+            image: metadata.image || null,
+            mcpEndpoint: metadata.mcpEndpoint || null,
+            a2aEndpoint: metadata.a2aEndpoint || null,
+            supportedTrusts: metadata.supportedTrusts || null,
+        };
+    } catch {
+        return null;
+    }
 }
 
 /**
@@ -276,13 +322,32 @@ export async function fetchAgents(first: number = 24, skip: number = 0, filters?
 
     const data = (await querySubgraph(query)) as { agents: (Agent & { agentURI: string })[] };
 
-    // Map agentURI to metadataUri for consistency
-    return data.agents.map((agent) => ({
-        ...agent,
-        metadataUri: agent.agentURI,
-    }));
+    // Map agentURI to metadataUri and resolve missing metadata
+    const agents = await Promise.all(
+        data.agents.map(async (agent) => {
+            // If registrationFile is null but we have a URI, try to fetch it
+            let registrationFile = agent.registrationFile;
+            if (!registrationFile && agent.agentURI) {
+                registrationFile = await resolveMetadata(agent.agentURI);
+            }
+
+            return {
+                ...agent,
+                metadataUri: agent.agentURI,
+                registrationFile,
+            };
+        })
+    );
+
+    return agents;
 }
 ```
+
+The `resolveMetadata` fallback is important because agents can store their metadata in different ways:
+
+-   **IPFS** (`ipfs://...`) — The subgraph decodes this automatically
+-   **HTTP** (`https://...`) — We fetch it directly
+-   **Base64** (`data:application/json;base64,...`) — We decode the base64 string
 
 Add a function to fetch a single agent with its reviews:
 
@@ -337,13 +402,21 @@ export async function fetchAgentWithFeedback(agentId: string): Promise<{ agent: 
         agent: (Agent & { agentURI: string; feedback: Feedback[] }) | null;
     };
 
-    if (!data.agent) {
+    const agent = data.agent;
+
+    if (!agent) {
         return { agent: null, feedback: [] };
     }
 
+    // If registrationFile is null but we have a URI, try to fetch it
+    let registrationFile = agent.registrationFile;
+    if (!registrationFile && agent.agentURI) {
+        registrationFile = await resolveMetadata(agent.agentURI);
+    }
+
     return {
-        agent: { ...data.agent, metadataUri: data.agent.agentURI },
-        feedback: data.agent.feedback || [],
+        agent: { ...agent, metadataUri: agent.agentURI, registrationFile },
+        feedback: agent.feedback || [],
     };
 }
 ```
@@ -430,10 +503,12 @@ export async function fetchGlobalStats(): Promise<{
 
 Your complete `subgraph.ts` file is now ready. This gives us four main functions:
 
--   `fetchAgents()` — paginated list with filters
+-   `fetchAgents()` — paginated list with filters (with metadata fallback)
 -   `fetchAgentCount()` — count agents matching filters (for pagination)
--   `fetchAgentWithFeedback()` — single agent with reviews
+-   `fetchAgentWithFeedback()` — single agent with reviews (with metadata fallback)
 -   `fetchGlobalStats()` — total counts
+
+The `resolveMetadata` helper ensures we can display agent information regardless of where the metadata is stored (IPFS, HTTP, or base64).
 
 ---
 

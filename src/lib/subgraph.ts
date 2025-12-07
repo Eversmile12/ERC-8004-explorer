@@ -132,11 +132,24 @@ export async function fetchAgents(first: number = 24, skip: number = 0, filters?
 
     const data = (await querySubgraph(query)) as { agents: (Agent & { agentURI: string })[] };
 
-    // Map agentURI to metadataUri for consistency
-    return data.agents.map((agent) => ({
-        ...agent,
-        metadataUri: agent.agentURI,
-    }));
+    // Map agentURI to metadataUri and resolve missing metadata
+    const agents = await Promise.all(
+        data.agents.map(async (agent) => {
+            // If registrationFile is null but we have a URI, try to fetch it
+            let registrationFile = agent.registrationFile;
+            if (!registrationFile && agent.agentURI) {
+                registrationFile = await resolveMetadata(agent.agentURI);
+            }
+
+            return {
+                ...agent,
+                metadataUri: agent.agentURI,
+                registrationFile,
+            };
+        })
+    );
+
+    return agents;
 }
 
 /**
@@ -200,8 +213,14 @@ export async function fetchAgentWithFeedback(agentId: string): Promise<{ agent: 
         return { agent: null, feedback: [] };
     }
 
+    // If registrationFile is null but we have a URI, try to fetch it
+    let registrationFile = agent.registrationFile;
+    if (!registrationFile && agent.agentURI) {
+        registrationFile = await resolveMetadata(agent.agentURI);
+    }
+
     return {
-        agent: { ...agent, metadataUri: agent.agentURI },
+        agent: { ...agent, metadataUri: agent.agentURI, registrationFile },
         feedback: agent.feedback || [],
     };
 }
@@ -280,6 +299,55 @@ export async function fetchGlobalStats(): Promise<{
         globalStats: { totalAgents: string; totalFeedback: string };
     };
     return data.globalStats;
+}
+
+/**
+ * Resolves and fetches metadata from a URI
+ *
+ * The subgraph only decodes IPFS metadata. For HTTP URLs and base64 data URIs,
+ * we need to fetch and decode the metadata ourselves.
+ *
+ * @param uri - The metadata URI (ipfs://, http://, https://, or data:)
+ * @returns Parsed metadata object or null if fetch fails
+ */
+async function resolveMetadata(uri: string): Promise<Agent["registrationFile"]> {
+    try {
+        let jsonData: string;
+
+        if (uri.startsWith("data:")) {
+            // Base64 data URI: data:application/json;base64,eyJuYW1lIjoi...
+            const base64Match = uri.match(/^data:[^;]+;base64,(.+)$/);
+            if (!base64Match) return null;
+            jsonData = atob(base64Match[1]);
+        } else if (uri.startsWith("http://") || uri.startsWith("https://")) {
+            // HTTP URL: fetch directly
+            const response = await fetch(uri);
+            if (!response.ok) return null;
+            jsonData = await response.text();
+        } else if (uri.startsWith("ipfs://")) {
+            // IPFS: use a public gateway
+            const hash = uri.replace("ipfs://", "");
+            const response = await fetch(`https://ipfs.io/ipfs/${hash}`);
+            if (!response.ok) return null;
+            jsonData = await response.text();
+        } else {
+            return null;
+        }
+
+        const metadata = JSON.parse(jsonData);
+
+        // Map to our registrationFile structure
+        return {
+            name: metadata.name || null,
+            description: metadata.description || null,
+            image: metadata.image || null,
+            mcpEndpoint: metadata.mcpEndpoint || null,
+            a2aEndpoint: metadata.a2aEndpoint || null,
+            supportedTrusts: metadata.supportedTrusts || null,
+        };
+    } catch {
+        return null;
+    }
 }
 
 /**
