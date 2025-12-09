@@ -98,7 +98,7 @@ We'll fetch agent data from **The Graph**, a decentralized indexing protocol tha
 Agent0 has deployed a subgraph that indexes all ERC-8004 agents on Ethereum Sepolia. Here's the endpoint we'll use:
 
 ```
-https://gateway.thegraph.com/api/[API_KEY]/subgraphs/id/6wQRC7geo9XYAhckfmfo8kbMRLeWU8KQd3XsJqFKmZLT
+https://gateway.thegraph.com/api/00a452ad3cd1900273ea62c1bf283f93/subgraphs/id/6wQRC7geo9XYAhckfmfo8kbMRLeWU8KQd3XsJqFKmZLT
 ```
 
 The subgraph provides:
